@@ -69,8 +69,28 @@ One Obligation record is created per frequency-changed product line on the renew
 
 ## Prerequisites
 
-- Salesforce Revenue Cloud (RLM/RCA) org
-- ARM Billing enabled
-- Products configured with multiple PSMs (Monthly, Quarterly, Semi-Annual, Annual)
+### Org Requirements
+- Salesforce Revenue Cloud (RLM/RCA) org with ARM Billing enabled
+- Products configured with multiple PSMs (Monthly, Quarterly, Semi-Annual, Annual) sharing the same PricebookEntry structure
 - `BullhornSessionProvider` Visualforce page deployed and accessible
-- Connected App with appropriate OAuth scopes for ARM REST API callouts
+- Remote Site Setting authorizing callouts to the org domain
+
+### Asset Renewal Fields
+Each active Asset must have `RenewalTermUnit` and `RenewalTerm` populated before the `/renew` endpoint can be called. If these are null, the solution patches them automatically from the asset's BillingScheduleGroup at submission time. If no BSG exists for an asset, set these fields manually on the Asset record:
+- `RenewalTermUnit` — match the asset's current billing frequency (e.g. `Months`, `Quarterly`, `Annual`)
+- `RenewalTerm` — typically `1`
+
+### Billing Treatment Configuration
+The `/renew` API path requires that your Billing Treatment have **Change Billing Frequency** enabled. This is a data configuration step — not deployable as metadata.
+
+**Setup path:** Revenue Cloud App → Billing Policies → select your Billing Policy → Billing Treatments → open the relevant treatment → check **Change Billing Frequency = true**
+
+If this flag is not set, the `/renew` endpoint will generate assets on the renewal contract but billing schedule continuity will not be maintained correctly across the frequency change.
+
+### Account Page Layout
+The `RLM_Account_Record_Page` flexipage is included in this repo and adds:
+- **Contracts tab** — lists active contracts with start/end dates directly on the Account record
+- **Billing Frequency Management button** — launches the wizard from the Account Highlights Panel
+- **Billing Schedule Groups tab** — shows BSG records for billing frequency diagnostics
+
+Deploy the flexipage and assign it to the Account object in Lightning App Builder to activate.
