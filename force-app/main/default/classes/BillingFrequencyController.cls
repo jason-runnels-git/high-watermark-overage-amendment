@@ -686,8 +686,17 @@ public without sharing class BillingFrequencyController {
             // Setting EffectiveDate to the renewal contract start date ensures asset lifecycle
             // dates align to the renewal period and the correct contract association is made.
             Order toUpdate = new Order(Id = orderId, Status = 'Activated');
-            if (renewalContractId != null) toUpdate.ContractId = renewalContractId;
-            if (!String.isBlank(effectiveDate)) toUpdate.EffectiveDate = Date.valueOf(effectiveDate);
+            if (renewalContractId != null) {
+                toUpdate.ContractId = renewalContractId;
+                // Clamp EffectiveDate to at least the renewal contract start date.
+                // Salesforce rejects Order.EffectiveDate < Contract.StartDate.
+                Contract rc = [SELECT StartDate FROM Contract WHERE Id = :renewalContractId LIMIT 1];
+                Date resolvedDate = !String.isBlank(effectiveDate) ? Date.valueOf(effectiveDate) : rc.StartDate;
+                if (rc.StartDate != null && resolvedDate < rc.StartDate) resolvedDate = rc.StartDate;
+                toUpdate.EffectiveDate = resolvedDate;
+            } else if (!String.isBlank(effectiveDate)) {
+                toUpdate.EffectiveDate = Date.valueOf(effectiveDate);
+            }
             update toUpdate;
             Order o = [SELECT OrderNumber FROM Order WHERE Id = :orderId LIMIT 1];
             return JSON.serialize(new Map<String, Object>{

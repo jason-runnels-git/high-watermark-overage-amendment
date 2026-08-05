@@ -160,12 +160,17 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
         // Default renewal dates from contract lifecycle end + 1 day
         const assets = this.selectedContract?.assets || [];
         if (assets.length > 0 && assets[0].lifecycleEndDate && !this.renewalStartDate) {
-            const end = new Date(assets[0].lifecycleEndDate + 'T00:00:00');
-            const start = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1);
-            this.renewalStartDate = start.toISOString().split('T')[0];
-            // Default renewal end = 1 year after start
-            const renewEnd = new Date(start.getFullYear() + 1, start.getMonth(), start.getDate() - 1);
-            this.renewalEndDate = renewEnd.toISOString().split('T')[0];
+            // Parse as local date parts to avoid UTC-offset shifting the date
+            const [ey, em, ed] = assets[0].lifecycleEndDate.split('-').map(Number);
+            const sy = em === 12 ? ey + 1 : ey;
+            const sm = em === 12 ? 1 : em + 1;
+            const sd = ed;  // start = day after end within the same month (end is always last day of month)
+            this.renewalStartDate = `${sy}-${String(sm).padStart(2,'0')}-${String(sd).padStart(2,'0')}`;
+            // Default renewal end = 1 year after start, minus 1 day
+            const ry = sy + 1;
+            const rm = sm;
+            const rd = sd - 1 || 28; // fallback to 28 if sd=1 (shouldn't happen for month-end dates)
+            this.renewalEndDate = `${ry}-${String(rm).padStart(2,'0')}-${String(rd).padStart(2,'0')}`;
         }
 
         // Build line items from selected contract assets
