@@ -362,8 +362,21 @@ public without sharing class BillingFrequencyController {
             }
 
             result.contractId = renewalContractId;
-            // Asset renewal fields (RenewalTerm/RenewalTermUnit/PricingSource) are NOT patched here.
-            // /amend does not require them — only /renew did.
+
+            // Patch unchanged assets that have null RenewalTermUnit/RenewalTerm before the /renew callout.
+            // /renew reads these fields directly off the Asset record — passing them in the payload is not enough.
+            // currentRenewalTermUnit is already resolved from the BSG fallback in getContractsWithAssets.
+            List<Asset> assetsTopatch = new List<Asset>();
+            for (LineChange lc : req.lines) {
+                if (lc.frequencyChanged == true) continue;
+                if (String.isBlank(lc.currentRenewalTermUnit)) continue;
+                assetsTopatch.add(new Asset(
+                    Id = lc.assetId,
+                    RenewalTermUnit = lc.currentRenewalTermUnit,
+                    RenewalTerm = 1
+                ));
+            }
+            if (!assetsTopatch.isEmpty()) update assetsTopatch;
 
             // Load obligation names already on this contract so we don't duplicate on retry
             Set<String> existingObligationNames = new Set<String>();
