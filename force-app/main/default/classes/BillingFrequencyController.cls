@@ -537,6 +537,7 @@ public without sharing class BillingFrequencyController {
                 'Name'              => 'Billing Frequency Renewal - ' + contractStartDate,
                 'QuoteAccountId'    => (String) sourceContract.AccountId,
                 'Pricebook2Id'      => (String) stdPbId,
+                'ContractId'        => contractId,
                 'StartDate'         => contractStartDate,
                 'TransactionType'   => 'AdvancedConfigurator',
                 'BillingStreet'     => acct.BillingStreet,
