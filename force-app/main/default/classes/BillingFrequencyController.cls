@@ -521,7 +521,7 @@ public without sharing class BillingFrequencyController {
 
             Map<String, Object> quoteRecord = new Map<String, Object>{
                 'attributes'        => new Map<String, Object>{ 'type' => 'Quote', 'method' => 'POST' },
-                'Name'              => 'Billing Frequency Renewal — ' + contractStartDate,
+                'Name'              => 'Billing Frequency Renewal - ' + contractStartDate,
                 'QuoteAccountId'    => (String) sourceContract.AccountId,
                 'Pricebook2Id'      => (String) stdPbId,
                 'StartDate'         => contractStartDate,
