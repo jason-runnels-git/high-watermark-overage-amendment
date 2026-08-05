@@ -107,7 +107,7 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
 
     get assetsNeedingReview() {
         return this.lineItems
-            .filter(l => l.hasUpgradeOptions && !l.selectedPbeId && l.needsAssetReview)
+            .filter(l => !l.selectedPbeId && l.needsAssetReview)
             .map(l => ({
                 assetId: l.assetId,
                 productName: l.productName,
@@ -249,9 +249,7 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
         this.currentStep = 3;
         this.isSubmitting = true;
 
-        // Exclude assets already at max frequency (no upgrade options available)
         const lines = this.lineItems
-            .filter(line => line.hasUpgradeOptions)
             .map(line => ({
                 assetId: line.assetId,
                 product2Id: line.product2Id,
