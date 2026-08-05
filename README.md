@@ -1,5 +1,7 @@
 # Manage Billing Frequency Changes for Existing Customers
 
+![Billing Frequency Management](BillingFrequencyManagement.jpg)
+
 ## Overview
 
 ARM Billing cannot change billing frequency of assets with proper Asset Record Succession behavior. The supported workaround is a contract-based "cancel and replace" approach at renewal. This lets the original assets expire naturally and generates a new renewal transaction with a new PSM (higher billing frequency) and activates new assets on the new Renewal Contract.
