@@ -1,4 +1,4 @@
-# Manage Billing Frequency Changes
+# Manage Billing Frequency Changes for Existing Customers
 
 ## Overview
 
