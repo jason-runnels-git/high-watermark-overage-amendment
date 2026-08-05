@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>CanceledByAsset__c</fullName>
+    <label>Canceled By Asset</label>
+    <type>Lookup</type>
+    <referenceTo>Asset</referenceTo>
+    <relationshipLabel>Canceled Assets</relationshipLabel>
+    <relationshipName>CanceledAssets</relationshipName>
+    <deleteConstraint>SetNull</deleteConstraint>
+</CustomField>

@@ -1,0 +1,14 @@
+<template>
+    <lightning-button
+        label="Manage Billing Frequency"
+        variant="brand"
+        icon-name="utility:settings"
+        onclick={handleOpen}>
+    </lightning-button>
+    <template if:true={showModal}>
+        <c-billing-frequency-modal
+            record-id={recordId}
+            onclose={handleClose}>
+        </c-billing-frequency-modal>
+    </template>
+</template>

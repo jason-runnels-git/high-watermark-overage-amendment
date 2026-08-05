@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>RenewalOf__c</fullName>
+    <label>Renewal Of</label>
+    <type>Lookup</type>
+    <referenceTo>Contract</referenceTo>
+    <relationshipLabel>Renewal Contracts</relationshipLabel>
+    <relationshipName>RenewalContracts</relationshipName>
+    <deleteConstraint>SetNull</deleteConstraint>
+</CustomField>

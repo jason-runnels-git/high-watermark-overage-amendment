@@ -1,0 +1,102 @@
+.asset-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.15s ease;
+}
+
+.asset-card:hover { border-color: #0176d3; }
+
+.asset-card_selected {
+    border-color: #0176d3;
+    background-color: #f0f8ff;
+}
+
+.info-section {
+    border-top: 1px solid #e0e5ee;
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+    pointer-events: none;
+}
+
+.col-header {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #706e6b;
+}
+
+.line-table-header {
+    border-bottom: 2px solid #dddbda;
+    padding-bottom: 0.4rem;
+    margin-bottom: 0.25rem;
+}
+
+.line-row {
+    padding: 0.5rem 0;
+    border-bottom: 1px solid #f3f3f3;
+    min-height: 3rem;
+}
+
+.freq-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+.freq-badge_current {
+    background-color: #e8f0fe;
+    color: #0176d3;
+}
+
+.price-changed {
+    color: #2e844a;
+    font-weight: 600;
+}
+
+.freq-combobox {
+    --slds-c-input-spacing-block-start: 0;
+    --slds-c-input-spacing-block-end: 0;
+}
+
+.info-box {
+    background-color: #f3f9f1;
+    border-left: 4px solid #2e844a;
+}
+
+.contract-selection-box {
+    background-color: #f3f3f3;
+    border-left: 4px solid #0176d3;
+}
+
+.review-warning-box {
+    background-color: #fffaef;
+    border-left: 4px solid #dd7a01;
+}
+
+.review-warning-title {
+    font-size: 0.8rem;
+}
+
+.review-table-header {
+    border-bottom: 1px solid #dddbda;
+    padding-bottom: 0.3rem;
+    margin-bottom: 0.25rem;
+    margin-top: 0.5rem;
+}
+
+.review-asset-row {
+    padding: 0.3rem 0;
+    border-bottom: 1px solid #f3f3f3;
+    min-height: 1.8rem;
+    align-items: center;
+}
+
+.review-missing {
+    color: #c23934;
+    font-style: italic;
+}
