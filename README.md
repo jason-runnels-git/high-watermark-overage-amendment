@@ -6,7 +6,7 @@
 
 | # | Video | Description |
 |---|-------|-------------|
-| 1 | *(coming soon)* | End-to-end Manage Billing Frequency Changes walkthrough |
+| 1 | [End-to-end Manage Billing Frequency Changes walkthrough](https://drive.google.com/file/d/1WtVIdWk7204govBOv3eDw0edp58ZUfqz/view?usp=drive_link) | Full demo of the billing frequency change wizard from contract selection through order activation |
 | 2 | [Staging Data for Manage Billing Frequency Changes](https://drive.google.com/file/d/1LHwsiuQeuVNjeM1HZkG-3jHhC6z3BxR_/view?usp=sharing) | Prerequisite demo staging steps required before running the capability |
 
 ---
