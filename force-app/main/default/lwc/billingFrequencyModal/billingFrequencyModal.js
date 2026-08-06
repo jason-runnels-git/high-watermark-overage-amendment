@@ -307,8 +307,7 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
                 this.isSubmitting = false;
                 return;
             }
-            // outputRecordType='Order': /renew now returns an orderId directly (no renewal quote created)
-            const renewalOrderId = rp.orderId; // null if all assets have freq changes
+            const renewalQuoteId = rp.quoteId; // null if all assets have freq changes
 
             // Step 3a: Resolve contract dates
             this.submittingStatus = 'Resolving contract dates...';
@@ -390,14 +389,25 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
             }
 
             const orderNumbers = [];
-            let freqOrderId = null;
 
-            // ─── Process renewal order (unchanged assets) ─────────────────
-            // /renew now returns an Order directly (outputRecordType='Order') — no quote generated,
-            // no polling needed. Just activate it and stamp the renewal contract.
-            if (renewalOrderId) {
+            // ─── Process renewal quote (unchanged assets) ─────────────────
+            if (renewalQuoteId) {
+                this.submittingStatus = 'Waiting for renewal quote pricing...';
+                const MAX_POLLS = 20;
+                for (let i = 0; i < MAX_POLLS; i++) {
+                    const s = await getQuoteCalculationStatus({ quoteId: renewalQuoteId });
+                    if (['Completed','CompletedWithPricing','CompletedWithTax','NotFound'].includes(s)) break;
+                    if (i === MAX_POLLS - 1) {
+                        this.errorMessage = 'Renewal quote pricing timed out (' + s + '). Reprice manually.';
+                        this.isSubmitting = false;
+                        return;
+                    }
+                    await new Promise(r => setTimeout(r, 2000));
+                }
                 this.submittingStatus = 'Activating renewal order...';
-                const ra = JSON.parse(await activateOrder({ orderId: renewalOrderId, renewalContractId: this._renewalContractId, effectiveDate: contractStartDate }));
+                const ro = JSON.parse(await createOrderFromQuote({ quoteId: renewalQuoteId }));
+                if (!ro.ok) { this.errorMessage = 'Renewal order creation failed: ' + ro.message; this.isSubmitting = false; return; }
+                const ra = JSON.parse(await activateOrder({ orderId: ro.orderId, renewalContractId: this._renewalContractId, effectiveDate: contractStartDate }));
                 if (!ra.ok) { this.errorMessage = 'Renewal order activation failed: ' + (ra.message || ra.body); this.isSubmitting = false; return; }
                 orderNumbers.push(ra.orderNumber);
             }
@@ -420,18 +430,16 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
                 const fo = JSON.parse(await createOrderFromQuote({ quoteId: freqQuoteId }));
                 if (!fo.ok) { this.errorMessage = 'Freq change order creation failed: ' + fo.message; this.isSubmitting = false; return; }
                 // Freq-change order: set EffectiveDate = renewal contract start date
-                // so assets get correct lifecycle dates. ContractId stamped in activateOrder.
+                // so assets get correct lifecycle dates and auto-link to renewal contract via ACR
                 const fa = JSON.parse(await activateOrder({ orderId: fo.orderId, renewalContractId: this._renewalContractId, effectiveDate: contractStartDate }));
                 if (!fa.ok) { this.errorMessage = 'Freq change order activation failed: ' + (fa.message || fa.body); this.isSubmitting = false; return; }
-                freqOrderId = fo.orderId; // needed by stampPostActivation to find new assets
                 orderNumbers.push(fa.orderNumber);
             }
 
-            // Step 6: Post-activation — ACR for unchanged assets (dual-link) + new freq-changed assets
+            // Step 6: Post-activation — create dual ACR for unchanged assets → renewal contract
             this.submittingStatus = 'Finalizing contract associations...';
             await stampPostActivation({
                 renewalContractId: this._renewalContractId,
-                freqOrderId: freqOrderId || null,
                 requestJson: this._requestJson
             });
 

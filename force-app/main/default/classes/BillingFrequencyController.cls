@@ -464,10 +464,9 @@ public without sharing class BillingFrequencyController {
             }
             Map<String, Object> renewBody = (Map<String, Object>)
                 JSON.deserializeUntyped((String) renewParsed.get('body'));
-            // outputRecordType='Order' — renewalRecordId is an Order ID (not a Quote ID)
             result.ok = true;
-            result.orderId = (String) renewBody.get('renewalRecordId');
-            result.message = result.orderId;
+            result.quoteId = (String) renewBody.get('renewalRecordId');
+            result.message = result.quoteId;
             return JSON.serialize(result);
         } catch (Exception ex) {
             result.ok = false;
@@ -753,7 +752,7 @@ public without sharing class BillingFrequencyController {
     // For freq-changed assets: stamp CanceledByAsset__c / ReplacesAsset__c lineage fields.
 
     @AuraEnabled
-    public static String stampPostActivation(Id renewalContractId, Id freqOrderId, String requestJson) {
+    public static String stampPostActivation(Id renewalContractId, String requestJson) {
         RenewalRequest req = (RenewalRequest) JSON.deserialize(requestJson, RenewalRequest.class);
         try {
             // Load renewal contract dates for ACR records
@@ -767,73 +766,37 @@ public without sharing class BillingFrequencyController {
                     ? renewalContract.StartDate.addMonths((Integer) renewalContract.ContractTerm).addDays(-1)
                     : null);
 
-            // Collect all asset IDs that need ACRs → renewal contract
-            Set<Id> needAcr = new Set<Id>();
-
-            // 1. Unchanged (original) assets — link to renewal contract for visibility
+            // Find unchanged asset IDs (no frequency change)
+            List<Id> unchangedAssetIds = new List<Id>();
             for (LineChange lc : req.lines) {
-                if (lc.frequencyChanged != true) needAcr.add(lc.assetId);
+                if (lc.frequencyChanged != true) unchangedAssetIds.add(lc.assetId);
             }
 
-            // 2. New freq-changed assets — assetization creates them but skips ACR because
-            //    Order.ContractId is not propagated to the OrderItem graph that assetization reads.
-            //    Find new assets by: same Account, same Product2Ids as the order, LifecycleStartDate
-            //    matching the renewal contract start date, and no existing ACR to any contract yet
-            //    (newly assetized records won't have ACRs yet).
-            if (freqOrderId != null) {
-                Order freqOrder = [SELECT AccountId FROM Order WHERE Id = :freqOrderId LIMIT 1];
-                Set<Id> freqProduct2Ids = new Set<Id>();
-                for (OrderItem oi : [
-                    SELECT Product2Id FROM OrderItem WHERE OrderId = :freqOrderId
-                ]) {
-                    freqProduct2Ids.add(oi.Product2Id);
-                }
-
-                // Assets created by assetization match on account + product + lifecycle start date.
-                // /renew receives renewalStartDate-1 (e.g. 2025-12-31) so new asset LifecycleStartDate
-                // = contract start date - 1 day. Query both dates to handle either case.
-                Date acrStartMinus1 = acrStart != null ? acrStart.addDays(-1) : null;
-                Set<Id> alreadyHaveAcr = new Set<Id>();
-                for (AssetContractRelationship existingAcr : [
+            // Create second ACR for each unchanged asset → renewal contract
+            // (first ACR to source contract already exists from original order activation)
+            if (!unchangedAssetIds.isEmpty()) {
+                // Check which ACRs to renewal contract don't exist yet (idempotent)
+                Set<Id> alreadyLinked = new Set<Id>();
+                for (AssetContractRelationship existing : [
                     SELECT AssetId FROM AssetContractRelationship
-                    WHERE Asset.AccountId = :freqOrder.AccountId
-                      AND Asset.Product2Id IN :freqProduct2Ids
-                      AND (Asset.LifecycleStartDate = :acrStart OR Asset.LifecycleStartDate = :acrStartMinus1)
+                    WHERE ContractId = :renewalContractId AND AssetId IN :unchangedAssetIds
                 ]) {
-                    alreadyHaveAcr.add(existingAcr.AssetId);
+                    alreadyLinked.add(existing.AssetId);
                 }
-                for (Asset a : [
-                    SELECT Id FROM Asset
-                    WHERE AccountId = :freqOrder.AccountId
-                      AND Product2Id IN :freqProduct2Ids
-                      AND (LifecycleStartDate = :acrStart OR LifecycleStartDate = :acrStartMinus1)
-                      AND Id NOT IN :alreadyHaveAcr
-                ]) {
-                    needAcr.add(a.Id);
+
+                List<AssetContractRelationship> newAcrs = new List<AssetContractRelationship>();
+                for (Id assetId : unchangedAssetIds) {
+                    if (alreadyLinked.contains(assetId)) continue;
+                    AssetContractRelationship acr = new AssetContractRelationship(
+                        AssetId    = assetId,
+                        ContractId = renewalContractId
+                    );
+                    if (acrStart != null) acr.StartDate = DateTime.newInstance(acrStart, Time.newInstance(0,0,0,0));
+                    if (acrEnd   != null) acr.EndDate   = DateTime.newInstance(acrEnd,   Time.newInstance(23,59,59,0));
+                    newAcrs.add(acr);
                 }
+                if (!newAcrs.isEmpty()) insert newAcrs;
             }
-
-            // Deduplicate against ACRs that already exist → renewal contract
-            Set<Id> alreadyLinked = new Set<Id>();
-            for (AssetContractRelationship existing : [
-                SELECT AssetId FROM AssetContractRelationship
-                WHERE ContractId = :renewalContractId AND AssetId IN :needAcr
-            ]) {
-                alreadyLinked.add(existing.AssetId);
-            }
-
-            List<AssetContractRelationship> newAcrs = new List<AssetContractRelationship>();
-            for (Id assetId : needAcr) {
-                if (alreadyLinked.contains(assetId)) continue;
-                AssetContractRelationship acr = new AssetContractRelationship(
-                    AssetId    = assetId,
-                    ContractId = renewalContractId
-                );
-                if (acrStart != null) acr.StartDate = DateTime.newInstance(acrStart, Time.newInstance(0,0,0,0));
-                if (acrEnd   != null) acr.EndDate   = DateTime.newInstance(acrEnd,   Time.newInstance(23,59,59,0));
-                newAcrs.add(acr);
-            }
-            if (!newAcrs.isEmpty()) insert newAcrs;
 
             return JSON.serialize(new Map<String, Object>{ 'ok' => true });
         } catch (Exception ex) {
@@ -855,15 +818,10 @@ public without sharing class BillingFrequencyController {
     // ─── Private HTTP helpers ─────────────────────────────────────────────────
 
     private static String callRenewApi(String sessionId, List<Id> assetIds, String renewalStartDate, Id contractId) {
-        // /renew requires renewalStartDate <= source contract EndDate.
-        // Our renewalStartDate is the first day of the new period (e.g. 2026-01-01), but the source
-        // contract ends the day before (2025-12-31). Pass the lifecycle end date (renewalStartDate - 1)
-        // to satisfy the constraint; ARM creates successor assets starting from that date.
-        String apiRenewalDate = String.valueOf(Date.valueOf(renewalStartDate).addDays(-1));
         Map<String, Object> payload = new Map<String, Object>{
             'assetIds' => assetIds,
-            'renewalStartDate' => apiRenewalDate + 'T00:00:00',
-            'outputRecordType' => 'Order'
+            'renewalStartDate' => renewalStartDate + 'T00:00:00',
+            'outputRecordType' => 'Quote'
         };
         if (contractId != null) payload.put('contractId', contractId);
 
