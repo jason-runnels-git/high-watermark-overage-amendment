@@ -789,14 +789,16 @@ public without sharing class BillingFrequencyController {
                     freqProduct2Ids.add(oi.Product2Id);
                 }
 
-                // Assets created by assetization from this order match on account + product + lifecycle start date.
-                // Using LifecycleStartDate = contract start date to avoid picking up pre-existing assets.
+                // Assets created by assetization match on account + product + lifecycle start date.
+                // /renew receives renewalStartDate-1 (e.g. 2025-12-31) so new asset LifecycleStartDate
+                // = contract start date - 1 day. Query both dates to handle either case.
+                Date acrStartMinus1 = acrStart != null ? acrStart.addDays(-1) : null;
                 Set<Id> alreadyHaveAcr = new Set<Id>();
                 for (AssetContractRelationship existingAcr : [
                     SELECT AssetId FROM AssetContractRelationship
                     WHERE Asset.AccountId = :freqOrder.AccountId
                       AND Asset.Product2Id IN :freqProduct2Ids
-                      AND Asset.LifecycleStartDate = :acrStart
+                      AND (Asset.LifecycleStartDate = :acrStart OR Asset.LifecycleStartDate = :acrStartMinus1)
                 ]) {
                     alreadyHaveAcr.add(existingAcr.AssetId);
                 }
@@ -804,7 +806,7 @@ public without sharing class BillingFrequencyController {
                     SELECT Id FROM Asset
                     WHERE AccountId = :freqOrder.AccountId
                       AND Product2Id IN :freqProduct2Ids
-                      AND LifecycleStartDate = :acrStart
+                      AND (LifecycleStartDate = :acrStart OR LifecycleStartDate = :acrStartMinus1)
                       AND Id NOT IN :alreadyHaveAcr
                 ]) {
                     needAcr.add(a.Id);
@@ -853,9 +855,14 @@ public without sharing class BillingFrequencyController {
     // ─── Private HTTP helpers ─────────────────────────────────────────────────
 
     private static String callRenewApi(String sessionId, List<Id> assetIds, String renewalStartDate, Id contractId) {
+        // /renew requires renewalStartDate <= source contract EndDate.
+        // Our renewalStartDate is the first day of the new period (e.g. 2026-01-01), but the source
+        // contract ends the day before (2025-12-31). Pass the lifecycle end date (renewalStartDate - 1)
+        // to satisfy the constraint; ARM creates successor assets starting from that date.
+        String apiRenewalDate = String.valueOf(Date.valueOf(renewalStartDate).addDays(-1));
         Map<String, Object> payload = new Map<String, Object>{
             'assetIds' => assetIds,
-            'renewalStartDate' => renewalStartDate + 'T00:00:00',
+            'renewalStartDate' => apiRenewalDate + 'T00:00:00',
             'outputRecordType' => 'Order'
         };
         if (contractId != null) payload.put('contractId', contractId);
