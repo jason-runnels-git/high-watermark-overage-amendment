@@ -395,17 +395,39 @@ public without sharing class BillingFrequencyController {
 
             result.contractId = renewalContractId;
 
-            // Patch unchanged assets that have null RenewalTermUnit/RenewalTerm before the /renew callout.
-            // /renew reads these fields directly off the Asset record — passing them in the payload is not enough.
-            // currentRenewalTermUnit is already resolved from the BSG fallback in getContractsWithAssets.
+            // Patch unchanged assets' RenewalTermUnit + RenewalTerm before the /renew callout.
+            // /renew reads these fields directly off the Asset record.
+            // RenewalTerm = number of billing periods in the renewal window:
+            //   e.g. 12-month window, Monthly PSM → 12; Quarterly → 4; Semi-Annual → 2; Annual → 1
+            Integer renewalMonths = 0;
+            if (!String.isBlank(req.renewalStartDate) && !String.isBlank(req.renewalEndDate)) {
+                Date rStart = Date.valueOf(req.renewalStartDate);
+                Date rEnd   = Date.valueOf(req.renewalEndDate);
+                // addDays(1) converts inclusive end date to exclusive, giving exact month count
+                renewalMonths = rStart.monthsBetween(rEnd.addDays(1));
+            }
+
+            // Months per billing period by PSM PricingTermUnit
+            Map<String, Integer> monthsPerPeriod = new Map<String, Integer>{
+                'Months'      => 1,
+                'Quarterly'   => 3,
+                'Semi-Annual' => 6,
+                'Annual'      => 12
+            };
+
             List<Asset> assetsTopatch = new List<Asset>();
             for (LineChange lc : req.lines) {
                 if (lc.frequencyChanged == true) continue;
                 if (String.isBlank(lc.currentRenewalTermUnit)) continue;
+                Integer mpp = monthsPerPeriod.containsKey(lc.currentRenewalTermUnit)
+                    ? monthsPerPeriod.get(lc.currentRenewalTermUnit) : 1;
+                Integer renewalTerm = (renewalMonths > 0 && mpp > 0)
+                    ? (Integer) Math.max(1, Math.round(renewalMonths / mpp))
+                    : 1;
                 assetsTopatch.add(new Asset(
-                    Id = lc.assetId,
+                    Id              = lc.assetId,
                     RenewalTermUnit = lc.currentRenewalTermUnit,
-                    RenewalTerm = 1
+                    RenewalTerm     = renewalTerm
                 ));
             }
             if (!assetsTopatch.isEmpty()) update assetsTopatch;
