@@ -131,7 +131,7 @@ public without sharing class BillingFrequencyController {
         List<AssetContractRelationship> acrs = [
             SELECT AssetId, ContractId,
                    Asset.Name, Asset.Product2Id, Asset.Product2.Name,
-                   Asset.CurrentQuantity, Asset.LifecycleStartDate, Asset.LifecycleEndDate,
+                   Asset.Quantity, Asset.CurrentQuantity, Asset.LifecycleStartDate, Asset.LifecycleEndDate,
                    Asset.RenewalTerm, Asset.RenewalTermUnit, Asset.PricingSource,
                    Contract.ContractNumber, Contract.StartDate, Contract.EndDate, Contract.Status
             FROM AssetContractRelationship
@@ -183,7 +183,8 @@ public without sharing class BillingFrequencyController {
         aw.assetId = acr.AssetId;
         aw.productName = acr.Asset.Product2.Name;
         aw.product2Id = acr.Asset.Product2Id;
-        aw.currentQuantity = acr.Asset.CurrentQuantity;
+        // Quantity reflects post-amendment current quantity; CurrentQuantity is the original contracted value
+        aw.currentQuantity = acr.Asset.Quantity != null ? acr.Asset.Quantity : acr.Asset.CurrentQuantity;
         aw.lifecycleStartDate = acr.Asset.LifecycleStartDate != null
             ? String.valueOf(acr.Asset.LifecycleStartDate).substring(0, 10) : null;
         aw.lifecycleEndDate = acr.Asset.LifecycleEndDate != null
