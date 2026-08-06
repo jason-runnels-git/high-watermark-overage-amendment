@@ -344,6 +344,19 @@ public without sharing class BillingFrequencyController {
                     return JSON.serialize(result);
                 }
                 renewalContractId = existing.Id;
+
+                // Cloned contracts don't carry AppUsageAssignment — insert if missing.
+                List<AppUsageAssignment> aua = [
+                    SELECT Id FROM AppUsageAssignment
+                    WHERE RecordId = :renewalContractId AND AppUsageType = 'RevenueLifecycleManagement'
+                    LIMIT 1
+                ];
+                if (aua.isEmpty()) {
+                    insert new AppUsageAssignment(
+                        AppUsageType = 'RevenueLifecycleManagement',
+                        RecordId = renewalContractId
+                    );
+                }
             } else {
                 // Auto-create — but first check if one already exists (idempotent on retry)
                 List<Contract> existing = [
@@ -755,9 +768,9 @@ public without sharing class BillingFrequencyController {
     public static String stampPostActivation(Id renewalContractId, String requestJson) {
         RenewalRequest req = (RenewalRequest) JSON.deserialize(requestJson, RenewalRequest.class);
         try {
-            // Load renewal contract dates for ACR records
             Contract renewalContract = [
-                SELECT StartDate, EndDate, ContractTerm FROM Contract WHERE Id = :renewalContractId LIMIT 1
+                SELECT AccountId, StartDate, EndDate, ContractTerm
+                FROM Contract WHERE Id = :renewalContractId LIMIT 1
             ];
             Date acrStart = renewalContract.StartDate;
             Date acrEnd = renewalContract.EndDate != null
@@ -765,40 +778,53 @@ public without sharing class BillingFrequencyController {
                 : (renewalContract.ContractTerm != null && renewalContract.StartDate != null
                     ? renewalContract.StartDate.addMonths((Integer) renewalContract.ContractTerm).addDays(-1)
                     : null);
+            Id accountId = renewalContract.AccountId;
 
-            // Find unchanged asset IDs (no frequency change)
-            List<Id> unchangedAssetIds = new List<Id>();
+            // Collect all asset IDs from the request and all product IDs
+            Set<Id> originalAssetIds = new Set<Id>();
+            Set<Id> allProduct2Ids = new Set<Id>();
             for (LineChange lc : req.lines) {
-                if (lc.frequencyChanged != true) unchangedAssetIds.add(lc.assetId);
+                originalAssetIds.add(lc.assetId);
+                if (lc.product2Id != null) allProduct2Ids.add(lc.product2Id);
             }
 
-            // Create second ACR for each unchanged asset → renewal contract
-            // (first ACR to source contract already exists from original order activation)
-            if (!unchangedAssetIds.isEmpty()) {
-                // Check which ACRs to renewal contract don't exist yet (idempotent)
-                Set<Id> alreadyLinked = new Set<Id>();
-                for (AssetContractRelationship existing : [
-                    SELECT AssetId FROM AssetContractRelationship
-                    WHERE ContractId = :renewalContractId AND AssetId IN :unchangedAssetIds
-                ]) {
-                    alreadyLinked.add(existing.AssetId);
-                }
-
-                List<AssetContractRelationship> newAcrs = new List<AssetContractRelationship>();
-                for (Id assetId : unchangedAssetIds) {
-                    if (alreadyLinked.contains(assetId)) continue;
-                    AssetContractRelationship acr = new AssetContractRelationship(
-                        AssetId    = assetId,
-                        ContractId = renewalContractId
-                    );
-                    if (acrStart != null) acr.StartDate = DateTime.newInstance(acrStart, Time.newInstance(0,0,0,0));
-                    if (acrEnd   != null) acr.EndDate   = DateTime.newInstance(acrEnd,   Time.newInstance(23,59,59,0));
-                    newAcrs.add(acr);
-                }
-                if (!newAcrs.isEmpty()) insert newAcrs;
+            // Find all assets that need ACRs → renewal contract:
+            // 1. Original unchanged assets (old records — link them to renewal contract for demo visibility)
+            // 2. New successor assets created by assetization (LifecycleStartDate = renewal contract start)
+            //    Assetization creates the asset records but skips ACR due to W-22168931 overlap bug.
+            Set<Id> candidateAssetIds = new Set<Id>(originalAssetIds);
+            for (Asset a : [
+                SELECT Id FROM Asset
+                WHERE AccountId = :accountId
+                  AND Product2Id IN :allProduct2Ids
+                  AND LifecycleStartDate = :acrStart
+            ]) {
+                candidateAssetIds.add(a.Id);
             }
 
-            return JSON.serialize(new Map<String, Object>{ 'ok' => true });
+            // Deduplicate — skip assets already linked to the renewal contract
+            Set<Id> alreadyLinked = new Set<Id>();
+            for (AssetContractRelationship existing : [
+                SELECT AssetId FROM AssetContractRelationship
+                WHERE ContractId = :renewalContractId AND AssetId IN :candidateAssetIds
+            ]) {
+                alreadyLinked.add(existing.AssetId);
+            }
+
+            List<AssetContractRelationship> newAcrs = new List<AssetContractRelationship>();
+            for (Id assetId : candidateAssetIds) {
+                if (alreadyLinked.contains(assetId)) continue;
+                AssetContractRelationship acr = new AssetContractRelationship(
+                    AssetId    = assetId,
+                    ContractId = renewalContractId
+                );
+                if (acrStart != null) acr.StartDate = DateTime.newInstance(acrStart, Time.newInstance(0,0,0,0));
+                if (acrEnd   != null) acr.EndDate   = DateTime.newInstance(acrEnd,   Time.newInstance(23,59,59,0));
+                newAcrs.add(acr);
+            }
+            if (!newAcrs.isEmpty()) insert newAcrs;
+
+            return JSON.serialize(new Map<String, Object>{ 'ok' => true, 'acrCount' => newAcrs.size() });
         } catch (Exception ex) {
             return JSON.serialize(new Map<String, Object>{ 'ok' => false, 'message' => ex.getMessage() });
         }

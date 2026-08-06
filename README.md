@@ -87,9 +87,27 @@ One Obligation record is created per frequency-changed product line on the renew
 - Remote Site Setting authorizing callouts to the org domain
 
 ### Asset Renewal Fields
-Each active Asset must have `RenewalTermUnit` and `RenewalTerm` populated before the `/renew` endpoint can be called. If these are null, the solution patches them automatically from the asset's BillingScheduleGroup at submission time. If no BSG exists for an asset, set these fields manually on the Asset record:
-- `RenewalTermUnit` — match the asset's current billing frequency (e.g. `Months`, `Quarterly`, `Annual`)
+Each active Asset must have `RenewalTermUnit`, `RenewalTerm`, and `PricingSource` populated before the `/renew` endpoint can be called.
+
+**Auto-resolution:** The wizard reads these from the asset's `BillingScheduleGroup` and patches null values automatically at submission time. Most ARM-provisioned assets will have a BSG and will resolve correctly.
+
+**Warning in the modal:** If the wizard displays a yellow "Review Required" warning for an asset, that asset has one or more missing fields and no BSG to resolve from. The warning is informational — unchanged assets are still included in the renewal. To suppress it, set these fields manually on the Asset record:
+- `RenewalTermUnit` — match the asset's current billing frequency (`Months`, `Quarterly`, `Semi-Annual`, or `Annual`)
 - `RenewalTerm` — typically `1`
+- `PricingSource` — typically `ContractedPrice`
+
+### Renewal Contract — AppUsageAssignment Required
+Every contract used as a renewal contract must have an `AppUsageAssignment` record with `AppUsageType = RevenueLifecycleManagement`. Without it, `/renew`, order activation, and assetization all fail silently or with cryptic errors.
+
+- Contracts auto-created by this wizard have it inserted automatically.
+- **Cloned contracts do not carry related records** — cloning a contract from the Salesforce UI copies the parent record only. If you stage a renewal contract by cloning, open a Developer Console anonymous Apex window and run:
+  ```apex
+  insert new AppUsageAssignment(
+      AppUsageType = 'RevenueLifecycleManagement',
+      RecordId = '<your_contract_id>'
+  );
+  ```
+- The wizard also inserts it automatically when you select an existing contract via "Use an existing contract" — so re-running the wizard on a cloned contract will self-heal this.
 
 ### Billing Treatment Configuration
 The `/renew` API path requires that your Billing Treatment have **Change Billing Frequency** enabled. This is a data configuration step — not deployable as metadata.
