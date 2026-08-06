@@ -10,6 +10,7 @@ import buildFreqChangeQuote from '@salesforce/apex/BillingFrequencyController.bu
 import addFreqChangeLines from '@salesforce/apex/BillingFrequencyController.addFreqChangeLines';
 import repriceFreqChangeQuote from '@salesforce/apex/BillingFrequencyController.repriceFreqChangeQuote';
 import stampPostActivation from '@salesforce/apex/BillingFrequencyController.stampPostActivation';
+import stampFreqChangeQuoteContract from '@salesforce/apex/BillingFrequencyController.stampFreqChangeQuoteContract';
 import getQuoteCalculationStatus from '@salesforce/apex/BillingFrequencyController.getQuoteCalculationStatus';
 import createOrderFromQuote from '@salesforce/apex/BillingFrequencyController.createOrderFromQuote';
 import activateOrder from '@salesforce/apex/BillingFrequencyController.activateOrder';
@@ -341,6 +342,19 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
                 return;
             }
             const freqQuoteId = fc.quoteId;
+
+            // Step 3c: DML — stamp ContractId on freq-change quote (no pricing recalc)
+            if (freqQuoteId) {
+                const sqResult = JSON.parse(await stampFreqChangeQuoteContract({
+                    freqQuoteId,
+                    renewalContractId: this._renewalContractId
+                }));
+                if (!sqResult.ok) {
+                    this.errorMessage = 'Failed to link quote to renewal contract: ' + sqResult.message;
+                    this.isSubmitting = false;
+                    return;
+                }
+            }
 
             // Step 3b-ii: Callout — add QSIs to the freq-change quote (separate tx from DML)
             if (freqQuoteId) {

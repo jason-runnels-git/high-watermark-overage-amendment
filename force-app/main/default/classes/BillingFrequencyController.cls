@@ -649,6 +649,22 @@ public without sharing class BillingFrequencyController {
         return JSON.serialize(new Map<String, Object>{ 'ok' => true });
     }
 
+    // ─── Step 3c: DML — stamp ContractId on freq-change quote ────────────────
+    // Safe to do after PST creates the quote. Does not trigger pricing recalc.
+    // Must be done before createOrderFromQuote so the Order inherits the contract link.
+
+    @AuraEnabled
+    public static String stampFreqChangeQuoteContract(String freqQuoteId, Id renewalContractId) {
+        try {
+            update new Quote(Id = freqQuoteId, ContractId = renewalContractId);
+            return JSON.serialize(new Map<String, Object>{ 'ok' => true });
+        } catch (Exception ex) {
+            return JSON.serialize(new Map<String, Object>{
+                'ok' => false, 'message' => ex.getMessage()
+            });
+        }
+    }
+
     // ─── Step 4: Poll quote calculation status ────────────────────────────────
 
     @AuraEnabled(cacheable=false)
