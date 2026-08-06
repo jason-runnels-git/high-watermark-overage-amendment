@@ -455,7 +455,7 @@ public without sharing class BillingFrequencyController {
                 return JSON.serialize(result);
             }
 
-            String renewResult = callRenewApi(sessionId, unchangedAssetIds, req.renewalStartDate, req.renewalContractId);
+            String renewResult = callRenewApi(sessionId, unchangedAssetIds, req.renewalStartDate, req.contractId);
             Map<String, Object> renewParsed = (Map<String, Object>) JSON.deserializeUntyped(renewResult);
             if (!(Boolean) renewParsed.get('ok')) {
                 result.ok = false;
