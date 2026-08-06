@@ -154,6 +154,21 @@ public without sharing class BillingFrequencyController {
             }
         }
 
+        // Load AssetStatePeriod — use the last period quantity as the current renewable quantity.
+        // Asset.Quantity is null in ARM orgs; Asset.CurrentQuantity reflects only the original order.
+        // The last AssetStatePeriod before LifecycleEndDate holds the post-amendment quantity.
+        Map<Id, Decimal> latestQtyByAsset = new Map<Id, Decimal>();
+        for (AssetStatePeriod asp : [
+            SELECT AssetId, Quantity, EndDate
+            FROM AssetStatePeriod
+            WHERE AssetId IN :assetIds
+            ORDER BY AssetId, EndDate DESC
+        ]) {
+            if (!latestQtyByAsset.containsKey(asp.AssetId)) {
+                latestQtyByAsset.put(asp.AssetId, asp.Quantity);
+            }
+        }
+
         Map<Id, ContractWrapper> contractMap = new Map<Id, ContractWrapper>();
         for (AssetContractRelationship acr : acrs) {
             if (!contractMap.containsKey(acr.ContractId)) {
@@ -167,7 +182,7 @@ public without sharing class BillingFrequencyController {
                 contractMap.put(acr.ContractId, cw);
             }
 
-            AssetWrapper aw = buildAssetWrapper(acr, pbesByProduct, bsgTermByAsset);
+            AssetWrapper aw = buildAssetWrapper(acr, pbesByProduct, bsgTermByAsset, latestQtyByAsset);
             contractMap.get(acr.ContractId).assets.add(aw);
         }
 
@@ -177,14 +192,17 @@ public without sharing class BillingFrequencyController {
     private static AssetWrapper buildAssetWrapper(
         AssetContractRelationship acr,
         Map<Id, List<PricebookEntry>> pbesByProduct,
-        Map<Id, String> bsgTermByAsset
+        Map<Id, String> bsgTermByAsset,
+        Map<Id, Decimal> latestQtyByAsset
     ) {
         AssetWrapper aw = new AssetWrapper();
         aw.assetId = acr.AssetId;
         aw.productName = acr.Asset.Product2.Name;
         aw.product2Id = acr.Asset.Product2Id;
-        // Quantity reflects post-amendment current quantity; CurrentQuantity is the original contracted value
-        aw.currentQuantity = acr.Asset.Quantity != null ? acr.Asset.Quantity : acr.Asset.CurrentQuantity;
+        // Use last AssetStatePeriod quantity — reflects post-amendment quantity.
+        // Asset.Quantity is null in ARM orgs; Asset.CurrentQuantity is only the original order quantity.
+        Decimal aspQty = latestQtyByAsset.get(acr.AssetId);
+        aw.currentQuantity = aspQty != null ? aspQty : acr.Asset.CurrentQuantity;
         aw.lifecycleStartDate = acr.Asset.LifecycleStartDate != null
             ? String.valueOf(acr.Asset.LifecycleStartDate).substring(0, 10) : null;
         aw.lifecycleEndDate = acr.Asset.LifecycleEndDate != null
@@ -437,7 +455,7 @@ public without sharing class BillingFrequencyController {
                 return JSON.serialize(result);
             }
 
-            String renewResult = callRenewApi(sessionId, unchangedAssetIds, req.renewalStartDate, req.contractId);
+            String renewResult = callRenewApi(sessionId, unchangedAssetIds, req.renewalStartDate, req.renewalContractId);
             Map<String, Object> renewParsed = (Map<String, Object>) JSON.deserializeUntyped(renewResult);
             if (!(Boolean) renewParsed.get('ok')) {
                 result.ok = false;
