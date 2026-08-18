@@ -12,6 +12,12 @@ A Salesforce Revenue Cloud demo showing a **High Watermark consumption model**: 
 - If Feb consumption = 8, overage = 3 - amendment delta = **3** (not cumulative)
 - On activation: `Asset.CurrentQuantity` ratchets from 5 to 6, MRR updates, and the next renewal replenishes at the new baseline
 
+> **Note:** This demo illustrates a straightforward High Watermark use case and has two intentional simplifications worth understanding before applying the pattern elsewhere.
+>
+> **Wallet math:** Revenue Cloud's wallet replenishment formula is `wallet credit = amendment line quantity x usage resource grant quantity`. This works cleanly here because Bullhorn Core - Usage has a grant quantity of 1 - line quantity and wallet credit are 1:1. For products where grant quantity is a multiplier (e.g., 1 license = 60 minutes of compute time), an overage delta of 3 on the amendment line would credit 180 minutes, not 3. Verify the wallet math before applying this pattern to any product with grant quantity > 1.
+>
+> **No tiered overage:** The amendment sends a flat delta quantity at a single overage rate. There is no support for tiered pricing structures where the per-unit rate changes based on how far usage exceeds the contracted quantity. A full tiered implementation would require rate band detection and separate amendment lines per tier.
+
 ---
 
 ## Demo Flow
@@ -28,7 +34,7 @@ Salesforce platform automation can check the **Has Overage?** field on the Accou
 
 ![Overage Detail Form](HighWatermark_0_Modal_submit.jpg)
 
-Rep clicks **Submit** - the full chain runs automatically:
+Once the Overage Amendment is submitted, the full transaction chain runs automatically:
 - `/amend` endpoint creates Amendment Quote + QuoteAction + QLI
 - PST Place call patches quote name and QLI start date, triggers async pricing
 - Poll `Quote.CalculationStatus` until `Completed` or `CompletedWithPricing`
@@ -92,6 +98,8 @@ Polling `Quote.CalculationStatus` must treat both `Completed` and `CompletedWith
 ### `createOrdersFromQuote` - quoteId must be typed as String
 The invocable action binding rejects an Apex `Id` type parameter. Declare `quoteId` as `String` in Apex when calling this action.
 
+> **Note:** During development we encountered API issues generating an amendment order directly in a headless flow. The solution is to invoke the `/amend` endpoint with `outputRecordType = Quote` first, price the quote, then convert to an order via `createOrdersFromQuote`. This should ultimately be supported as a direct order path. Whether the overage amendment surfaces as a Quote (for review and approval before ordering) or goes straight to an Order is a meaningful business decision during implementation - both patterns are architecturally valid and the right choice will depend on the customer's approval workflow.
+
 ### Grant replenishment cadence
 A new additive `UsageEntitlementBucket` is created on amendment activation (by design - not a bug). Grant replenishment fires on the product's **Usage Grant Refresh Policy** renewal cadence, not on the amendment itself. The renewal uses the updated `CurrentQuantity` as the new baseline.
 
@@ -147,4 +155,51 @@ sf project deploy start --source-dir force-app --target-org <your-org-alias>
 ### Verify
 ```bash
 sf project deploy report --target-org <your-org-alias>
+```
+
+---
+
+## Deploy This Repo with AI
+
+```
+Deploy this GitHub repo into my Salesforce org.
+
+Repo:            <PASTE GITHUB URL>
+Org:             <alias of my target org>   (this is a <sandbox|dev|dev-edition> org — NOT production)
+Expected Org Id: <optional 00D… — if I give it, assert it matches before deploying>
+Login type:      <production/dev/trial = login.salesforce.com | sandbox = test.salesforce.com>
+
+Do this:
+
+1. Clone the repo into a subfolder here.
+
+2. Read README.md, sfdx-project.json / cumulusci.yml, and the source tree.
+   Tell me what the repo is and which deploy mechanism you'll use.
+
+3. Make sure `sf` (and `cci` if needed) are installed; if not, stop and tell me.
+
+4. Confirm the target org before touching it:
+   - Run `sf org display --target-org <alias>` WITHOUT printing the access token
+     (prefer `--json` and surface only alias, username, orgId, instanceUrl,
+     connectedStatus). If a temp "show secrets" env var is set, don't echo the token.
+   - If it errors with NamedOrgNotFoundError / not authorized: do NOT substitute a
+     similarly-named org even if the CLI suggests one. Run
+     `sf org login web --alias <alias> --instance-url <login url for my Login type>`,
+     then PAUSE and tell me to finish the browser login before continuing.
+   - Re-run the display, verify Connected, and if I gave an Expected Org Id, assert
+     it matches EXACTLY. On any mismatch, stop and ask — never deploy.
+
+5. Run a validate/dry-run deploy and show me the plan.
+
+6. Deploy. (Once the org is confirmed in step 4, you are pre-approved to run the
+   metadata deploy; data loads/deletes still require my explicit approval.)
+
+7. Do EVERY post-deploy step the README calls for — permission sets, feature
+   toggles, sample data, field/config that isn't on a layout, activation order.
+   List anything you cannot automate so I can do it by hand.
+
+8. Verify the deploy succeeded and give me a short summary of what changed and
+   what's left for me to do.
+
+Stop and ask me before anything destructive or anything that loads/deletes data.
 ```
