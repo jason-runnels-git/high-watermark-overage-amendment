@@ -1,32 +1,29 @@
-# Manage Billing Frequency Changes for Existing Customers
-
-![Billing Frequency Management](BillingFrequencyManagement.jpg)
-
-## Capability Overview Videos
-
-| # | Video | Description |
-|---|-------|-------------|
-| 1 | [End-to-end Manage Billing Frequency Changes walkthrough](https://drive.google.com/file/d/1WtVIdWk7204govBOv3eDw0edp58ZUfqz/view?usp=drive_link) | Full demo of the billing frequency change wizard from contract selection through order activation |
-| 2 | [Staging Data for Manage Billing Frequency Changes](https://drive.google.com/file/d/1LHwsiuQeuVNjeM1HZkG-3jHhC6z3BxR_/view?usp=sharing) | Prerequisite demo staging steps required before running the capability |
-
----
+# High Watermark Usage Model with Overage Amendment and Wallet Replenishment
 
 ## Overview
 
-ARM Billing cannot change billing frequency of assets with proper Asset Record Succession behavior. The supported workaround is a contract-based "cancel and replace" approach at renewal. This lets the original assets expire naturally and generates a new renewal transaction with a new PSM (higher billing frequency) and activates new assets on the new Renewal Contract.
+A Salesforce Revenue Cloud demo showing a **High Watermark consumption model**: when usage transactions exceed an anchor product's contracted quantity, an overage is detected and an Amendment Quote is automatically created, ordered, and activated — ratcheting the asset quantity to the new high watermark for future billing periods.
 
-> **Note:** The "fix" for standalone Billing in release 264 does not support "CPQ" use cases.
-
-This asset offers a Wizard-like experience to Manage Billing Frequency changes for existing customers. The account-level Contract view of assets and obligation management offer additional visuals to help explain the trade-offs and benefits of this product gap.
+**Business story:**
+- Anchor product (Bullhorn Core - Usage) starts at qty 5 ($100/mo per seat)
+- Usage Transaction Journal records capture actual consumption via a linked Usage Resource ($120/unit overage rate)
+- If Feb consumption = 8, overage = 3 → amendment delta = **3** (not cumulative)
+- On activation: `Asset.CurrentQuantity` ratchets from 5 → 6, MRR updates, and the next renewal replenishes at the new baseline
 
 ---
 
-## Asset Record Succession Pattern
+## Demo Flow
 
-When a customer wants to upgrade billing frequency (e.g. Monthly → Quarterly → Annual), the system does not modify the existing asset in-place. Instead it creates a **successor asset** on a new Renewal Contract with the upgraded PSM. The original and successor assets are linked via bi-directional custom lookup fields, providing a clear lineage chain for reporting and analytics.
-
-**Upgrade path:** `Monthly < Quarterly < Semi-Annual < Annual`
-**Constraint:** Upgrades must stay within the same SellingModelType (Term → Term, Evergreen → Evergreen).
+1. Rep checks **Has Overage?** on the Account record — triggers the wizard
+2. **Step 1 — Asset Picker:** Card view of all anchor assets showing subscription info, current period usage per resource, and overage warning pills
+3. **Step 2 — Overage Detail Form:** Pre-populated usage resource, overage qty, billing period dates, and auto-calculated amendment line start date (first of next billing period)
+4. Rep clicks **Submit** — the full chain runs automatically:
+   - `/amend` endpoint creates Amendment Quote + QuoteAction + QLI
+   - PST Place call patches quote name and QLI start date, triggers async pricing
+   - Poll `Quote.CalculationStatus` until `Completed` or `CompletedWithPricing`
+   - `createOrdersFromQuote` invocable action places the order
+   - Order activated via DML → asset wallet replenishes
+5. Toast confirmation + navigation to the asset record
 
 ---
 
@@ -36,20 +33,22 @@ When a customer wants to upgrade billing frequency (e.g. Monthly → Quarterly �
 
 | Component | Purpose |
 |-----------|---------|
-| `billingFrequencyTrigger` | Account page button — launches the billing frequency modal |
-| `billingFrequencyModal` | Multi-step wizard: (1) Contract selection, (2) per-line PSM upgrade picker, (3) Confirm |
+| `overageAmendmentTrigger` | Account page — wires to `Has_Overage__c`, opens the modal when checked |
+| `overageAmendmentModal` | 2-step wizard: asset picker with usage/overage details → overage detail form |
 
 ### Apex
 
 | Class | Purpose |
 |-------|---------|
-| `BillingFrequencyController` | Orchestrates ARM REST calls: `/amend` endpoint, PSM swap via PricebookEntry, repricing, Renewal Contract + Obligation record creation |
+| `OverageAmendmentController` | Queries anchor assets, usage period items, and overage rates; orchestrates amendment creation, pricing poll, order creation, and activation |
+| `AmendmentQuoteController` | Place Sales Transaction API helper |
 
 ### Custom Fields
 
 | Object | Field | Type | Purpose |
 |--------|-------|------|---------|
-| `Asset` | `CanceledByAsset__c` | Lookup(Asset) | Original asset → successor asset |
+| `Account` | `Has_Overage__c` | Checkbox | Demo trigger — checked by rep to open the overage wizard |
+| `Asset` | `CanceledByAsset__c` | Lookup(Asset) | Original asset → successor asset (billing frequency lineage) |
 | `Asset` | `ReplacesAsset__c` | Lookup(Asset) | Successor asset → original asset |
 | `Contract` | `RenewalOf__c` | Lookup(Contract) | Renewal contract → original contract |
 
@@ -59,67 +58,77 @@ When a customer wants to upgrade billing frequency (e.g. Monthly → Quarterly �
 |-----------|---------|
 | `BullhornSessionProvider.page` | Visualforce page — provides full session ID via `window.postMessage` for ARM REST API calls |
 | `Bullhorn_Org` Remote Site Setting | Authorizes callouts to the org domain |
+| `RLM_CreateOrdersFromQuote` Flow | Standard Revenue Cloud flow for order creation from quote |
 
 ---
 
 ## Key Design Decisions
 
-### `/amend` not `/renew`
-The `/renew` endpoint produces quotes with `TransactionType = AdvancedConfigurator`. The PST (Place Sales Transaction) API cannot operate on these quotes. The `/amend` endpoint with `quantityChange=0` and `amendmentStartDate = renewal contract start date` generates a standard Amendment Quote that PST handles correctly.
+### Amendment quantity = overage delta only
+The `/amend` endpoint receives only the delta (e.g. 3), not the new cumulative total. `StartQuantity` on the QuoteLineItem is calculated by the system from the current asset quantity — do not send it.
 
-### No cancel lines on the quote
-Original assets expire naturally at `LifecycleEndDate` — no cancel QuoteAction is needed for the renewal use case. Cancel QuoteActions are for mid-term amendments only. Asset succession lineage is tracked via custom fields stamped post-activation.
+### Amendment line start date = first of next billing period
+The QuoteLineItem `StartDate` is patched to the first day of the month following the billing period end date, not today. This ensures the ratcheted quantity takes effect at the correct boundary.
 
-### Obligation records
-One Obligation record is created per frequency-changed product line on the renewal Contract, documenting the billing frequency change for compliance and reporting.
+### `CompletedWithPricing` is a valid pricing exit state
+Polling `Quote.CalculationStatus` must treat both `Completed` and `CompletedWithPricing` as done states. `CompletedWithPricing` is an undocumented variant indicating pricing ran successfully — omitting it causes an infinite poll loop.
 
-### Session ID
-`UserInfo.getSessionId()` returns a restricted Lightning session (401 on REST calls from Apex). Session ID is obtained via the `BullhornSessionProvider` Visualforce page using `window.postMessage`.
+### `createOrdersFromQuote` — quoteId must be typed as String
+The invocable action binding rejects an Apex `Id` type parameter. Declare `quoteId` as `String` in Apex when calling this action.
+
+### Grant replenishment cadence
+A new additive `UsageEntitlementBucket` is created on amendment activation (by design — not a bug). Grant replenishment fires on the product's **Usage Grant Refresh Policy** renewal cadence, not on the amendment itself. The renewal uses the updated `CurrentQuantity` as the new baseline.
 
 ---
 
 ## Prerequisites
 
 ### Org Requirements
-- Salesforce Revenue Cloud (RLM/RCA) org with ARM Billing enabled
-- Products configured with multiple PSMs (Monthly, Quarterly, Semi-Annual, Annual) sharing the same PricebookEntry structure
+- Salesforce Revenue Cloud (RLM/RCA) org with ARM and Usage Management enabled
+- Anchor product configured with `UsageModelType = Anchor` and an active Product Selling Model
+- Usage Resource linked to the anchor product via a Rate Card with `RateCardType = Base`, `Status = Active`
+- `BillingPeriodItem` records present for the asset's billing schedule to surface usage data in the modal
 - `BullhornSessionProvider` Visualforce page deployed and accessible
-- Remote Site Setting authorizing callouts to the org domain
+- Remote Site Setting updated with **your org's My Domain URL** (see below)
 
-### Asset Renewal Fields
-Each active Asset must have `RenewalTermUnit`, `RenewalTerm`, and `PricingSource` populated before the `/renew` endpoint can be called.
+### Remote Site Setting — Update Before Deploying
+`remoteSiteSettings/Bullhorn_Org.remoteSite-meta.xml` contains the source org's My Domain URL. Before deploying to any other org, update line 6:
 
-**Auto-resolution:** The wizard reads these from the asset's `BillingScheduleGroup` and patches null values automatically at submission time. Most ARM-provisioned assets will have a BSG and will resolve correctly.
+```xml
+<url>https://YOUR-ORG-DOMAIN.my.salesforce.com</url>
+```
 
-**Warning in the modal:** If the wizard displays a yellow "Review Required" warning for an asset, that asset has one or more missing fields and no BSG to resolve from. The warning is informational — unchanged assets are still included in the renewal. To suppress it, set these fields manually on the Asset record:
-- `RenewalTermUnit` — match the asset's current billing frequency (`Months`, `Quarterly`, `Semi-Annual`, or `Annual`)
-- `RenewalTerm` — typically `1`
-- `PricingSource` — typically `ContractedPrice`
-
-### Renewal Contract — AppUsageAssignment Required
-Every contract used as a renewal contract must have an `AppUsageAssignment` record with `AppUsageType = RevenueLifecycleManagement`. Without it, `/renew`, order activation, and assetization all fail silently or with cryptic errors.
-
-- Contracts auto-created by this wizard have it inserted automatically.
-- **Cloned contracts do not carry related records** — cloning a contract from the Salesforce UI copies the parent record only. If you stage a renewal contract by cloning, open a Developer Console anonymous Apex window and run:
-  ```apex
-  insert new AppUsageAssignment(
-      AppUsageType = 'RevenueLifecycleManagement',
-      RecordId = '<your_contract_id>'
-  );
-  ```
-- The wizard also inserts it automatically when you select an existing contract via "Use an existing contract" — so re-running the wizard on a cloned contract will self-heal this.
-
-### Billing Treatment Configuration
-The `/renew` API path requires that your Billing Treatment have **Change Billing Frequency** enabled. This is a data configuration step — not deployable as metadata.
-
-**Setup path:** Revenue Cloud App → Billing Policies → select your Billing Policy → Billing Treatments → open the relevant treatment → check **Change Billing Frequency = true**
-
-If this flag is not set, the `/renew` endpoint will generate assets on the renewal contract but billing schedule continuity will not be maintained correctly across the frequency change.
+Find your org's URL: **Setup → My Domain → Current My Domain URL**.
 
 ### Account Page Layout
-The `RLM_Account_Record_Page` flexipage is included in this repo and adds:
-- **Contracts tab** — lists active contracts with start/end dates directly on the Account record
-- **Billing Frequency Management button** — launches the wizard from the Account Highlights Panel
-- **Billing Schedule Groups tab** — shows BSG records for billing frequency diagnostics
+The `RLM_Account_Record_Page` flexipage adds the **Has Overage?** trigger and the overage amendment button region to the Account Highlights Panel. Deploy the flexipage and assign it in Lightning App Builder.
 
-Deploy the flexipage and assign it to the Account object in Lightning App Builder to activate.
+### Demo Data (not deployable — load manually)
+
+| Record | Required Fields |
+|--------|----------------|
+| Product2 (Anchor) | `UsageModelType = Anchor`, active PSM, active PricebookEntry |
+| UsageResource | Linked to anchor product; active RateCardEntry with `RateCardType = Base` |
+| Account | Any demo account |
+| Asset | `Product2Id` → anchor product, `Status = Active`, `Quantity ≥ 1`, `LifecycleEndDate` in the future |
+| BillingScheduleGroup | Linked to the asset via `ReferenceEntityId`; child BillingSchedule with `BillingMethod = OrderAmount` |
+| BillingPeriodItem | At least one record with `OverageQuantity > 0` to pre-populate the wizard form |
+
+---
+
+## Deploying
+
+### Deploy via manifest (recommended)
+```bash
+sf project deploy start --manifest manifest/package.xml --target-org <your-org-alias>
+```
+
+### Deploy source format
+```bash
+sf project deploy start --source-dir force-app --target-org <your-org-alias>
+```
+
+### Verify
+```bash
+sf project deploy report --target-org <your-org-alias>
+```

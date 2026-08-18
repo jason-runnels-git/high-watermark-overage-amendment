@@ -1,0 +1,9 @@
+<template>
+    <template if:true={showModal}>
+        <c-overage-amendment-modal
+            record-id={recordId}
+            onclose={handleModalClose}
+            onsubmit={handleModalSubmit}>
+        </c-overage-amendment-modal>
+    </template>
+</template>

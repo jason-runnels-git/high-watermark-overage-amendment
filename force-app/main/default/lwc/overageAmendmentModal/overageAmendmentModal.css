@@ -1,0 +1,82 @@
+.asset-card {
+    cursor: pointer;
+    border: 2px solid transparent;
+    transition: border-color 0.15s ease;
+}
+
+.asset-card:hover {
+    border-color: #0176d3;
+}
+
+.asset-card_selected {
+    border-color: #0176d3;
+    background-color: #f0f8ff;
+}
+
+.section-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #706e6b;
+    margin-bottom: 0.25rem;
+    pointer-events: none;
+}
+
+.overage-label {
+    color: #a16200;
+}
+
+.no-overage-label {
+    color: #2e844a;
+}
+
+.info-section {
+    border-top: 1px solid #e0e5ee;
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+    pointer-events: none;
+}
+
+.col-header {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #706e6b;
+}
+
+.overage-row {
+    padding: 2px 0;
+    border-bottom: 1px solid #f3f3f3;
+}
+
+.overage-qty {
+    color: #a16200;
+    font-weight: 600;
+}
+
+.overage-status {
+    display: inline-block;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 4px;
+}
+
+.overage-status_invoiced {
+    background-color: #e8f4e8;
+    color: #2e844a;
+}
+
+.overage-status_pending {
+    background-color: #fef3e2;
+    color: #a16200;
+}
+
+.amendment-date-box {
+    background-color: #f3f9f1;
+    border-left: 4px solid #2e844a;
+}

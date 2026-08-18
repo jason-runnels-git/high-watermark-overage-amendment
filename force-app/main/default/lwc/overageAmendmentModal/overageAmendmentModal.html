@@ -1,0 +1,246 @@
+<template>
+    <section role="dialog" tabindex="-1" aria-modal="true" aria-label="Overage Amendment"
+        class="slds-modal slds-fade-in-open">
+        <div class="slds-modal__container">
+
+            <header class="slds-modal__header">
+                <button class="slds-button slds-button_icon slds-modal__close slds-button_icon-inverse"
+                    title="Close" onclick={handleClose}>
+                    <lightning-icon icon-name="utility:close" size="small"></lightning-icon>
+                    <span class="slds-assistive-text">Close</span>
+                </button>
+                <h2 class="slds-modal__title">Overage Amendment</h2>
+                <p class="slds-m-top_x-small slds-text-color_inverse-weak slds-text-body_small">
+                    Step {currentStep} of 2 &mdash; {stepLabel}
+                </p>
+            </header>
+
+            <div class="slds-modal__content slds-p-around_medium">
+
+                <!-- STEP 1: Asset Picker -->
+                <template if:true={isStep1}>
+                    <template if:true={isLoading}>
+                        <div class="slds-align_absolute-center slds-p-around_large">
+                            <lightning-spinner alternative-text="Loading assets" size="medium"></lightning-spinner>
+                        </div>
+                    </template>
+                    <template if:false={isLoading}>
+                        <p class="slds-text-body_regular slds-m-bottom_medium">Select the asset to amend:</p>
+
+                        <template for:each={assets} for:item="asset">
+                            <div key={asset.assetId} class={asset.cardClass}
+                                onclick={handleAssetSelect} data-id={asset.assetId}>
+
+                                <!-- Card header -->
+                                <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_x-small" data-id={asset.assetId}>
+                                    <div class="slds-col" data-id={asset.assetId}>
+                                        <p class="slds-text-heading_small" data-id={asset.assetId}>{asset.productName}</p>
+                                    </div>
+                                    <div class="slds-col slds-text-align_right" data-id={asset.assetId}>
+                                        <template if:true={asset.isSelected}>
+                                            <lightning-badge label="Selected"></lightning-badge>
+                                        </template>
+                                    </div>
+                                </div>
+
+                                <!-- SUBSCRIPTION -->
+                                <template if:true={asset.hasSubscription}>
+                                    <div class="info-section slds-m-bottom_x-small" data-id={asset.assetId}>
+                                        <p class="section-label" data-id={asset.assetId}>SUBSCRIPTION</p>
+                                        <div class="slds-grid" data-id={asset.assetId}>
+                                            <div class="slds-col" data-id={asset.assetId}>
+                                                <span class="slds-text-body_small" data-id={asset.assetId}>
+                                                    Qty {asset.billingQuantity} &times; ${asset.unitPrice} / {asset.billingTermUnit}
+                                                </span>
+                                            </div>
+                                            <div class="slds-col slds-text-align_right" data-id={asset.assetId}>
+                                                <span class="slds-text-body_small" data-id={asset.assetId}>
+                                                    Next billing: {asset.nextBillingDateFormatted}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </template>
+
+                                <!-- CURRENT PERIOD USAGE RATES -->
+                                <template if:true={asset.hasUsageResources}>
+                                    <div class="info-section slds-m-bottom_x-small" data-id={asset.assetId}>
+                                        <p class="section-label" data-id={asset.assetId}>CURRENT PERIOD USAGE RATES</p>
+                                        <template for:each={asset.usageResources} for:item="ur">
+                                            <div key={ur.usageResourceId} class="slds-grid" data-id={asset.assetId}>
+                                                <div class="slds-col" data-id={asset.assetId}>
+                                                    <span class="slds-text-body_small" data-id={asset.assetId}>{ur.resourceName}</span>
+                                                </div>
+                                                <div class="slds-col slds-text-align_right" data-id={asset.assetId}>
+                                                    <template if:true={ur.overageRate}>
+                                                        <span class="slds-text-body_small slds-text-color_weak" data-id={asset.assetId}>${ur.overageRate} / unit overage</span>
+                                                    </template>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+
+                                <!-- OVERAGE INFO -->
+                                <div class="info-section" data-id={asset.assetId}>
+                                <template if:false={asset.hasOverageHistory}>
+                                    <p class="section-label no-overage-label" data-id={asset.assetId}>NO OVERAGE FOR THIS ITEM</p>
+                                </template>
+                                <template if:true={asset.hasOverageHistory}>
+                                    <div data-id={asset.assetId}>
+                                        <p class="section-label overage-label" data-id={asset.assetId}>OVERAGE INFO</p>
+                                        <div class="overage-table-header slds-grid slds-m-bottom_xx-small" data-id={asset.assetId}>
+                                            <div class="slds-col slds-size_4-of-12" data-id={asset.assetId}>
+                                                <span class="col-header">Resource</span>
+                                            </div>
+                                            <div class="slds-col slds-size_1-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                <span class="col-header">Used</span>
+                                            </div>
+                                            <div class="slds-col slds-size_1-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                <span class="col-header">Ovg</span>
+                                            </div>
+                                            <div class="slds-col slds-size_2-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                <span class="col-header">Period Start</span>
+                                            </div>
+                                            <div class="slds-col slds-size_2-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                <span class="col-header">Period End</span>
+                                            </div>
+                                            <div class="slds-col slds-size_2-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                <span class="col-header">Billing Status</span>
+                                            </div>
+                                        </div>
+                                        <template for:each={asset.overageHistory} for:item="oh">
+                                            <div key={oh.usageResourceId} class="slds-grid overage-row" data-id={asset.assetId}>
+                                                <div class="slds-col slds-size_4-of-12" data-id={asset.assetId}>
+                                                    <span class="slds-text-body_small" data-id={asset.assetId}>{oh.resourceName}</span>
+                                                </div>
+                                                <div class="slds-col slds-size_1-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                    <span class="slds-text-body_small" data-id={asset.assetId}>{oh.totalUsedQuantity}</span>
+                                                </div>
+                                                <div class="slds-col slds-size_1-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                    <span class="slds-text-body_small overage-qty" data-id={asset.assetId}>{oh.overageQuantity}</span>
+                                                </div>
+                                                <div class="slds-col slds-size_2-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                    <span class="slds-text-body_small slds-text-color_weak" data-id={asset.assetId}>{oh.periodStartFormatted}</span>
+                                                </div>
+                                                <div class="slds-col slds-size_2-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                    <span class="slds-text-body_small slds-text-color_weak" data-id={asset.assetId}>{oh.periodEndFormatted}</span>
+                                                </div>
+                                                <div class="slds-col slds-size_2-of-12 slds-text-align_right" data-id={asset.assetId}>
+                                                    <span class={oh.statusClass} data-id={asset.assetId}>{oh.statusLabel}</span>
+                                                </div>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                                </div>
+
+                            </div>
+                        </template>
+
+                        <template if:true={noAssets}>
+                            <div class="slds-box slds-theme_shade">
+                                <p class="slds-text-body_small">No usage assets found for this account.</p>
+                            </div>
+                        </template>
+                    </template>
+                </template>
+
+                <!-- STEP 2: Overage Details -->
+                <template if:true={isStep2}>
+                    <div class="slds-box slds-theme_shade slds-m-bottom_medium">
+                        <p class="slds-text-heading_small">{selectedAsset.productName}</p>
+                        <p class="slds-text-body_small slds-text-color_weak slds-m-top_xx-small">
+                            Subscription Qty: {selectedAsset.billingQuantity}
+                            <template if:true={selectedAsset.unitPrice}>
+                                &nbsp;|&nbsp; ${selectedAsset.unitPrice} / {selectedAsset.billingTermUnit}
+                            </template>
+                            <template if:true={selectedAsset.nextBillingDate}>
+                                &nbsp;|&nbsp; Next billing: {selectedAsset.nextBillingDateFormatted}
+                            </template>
+                        </p>
+                    </div>
+
+                    <lightning-combobox
+                        label="Usage Resource (Overage Product)"
+                        value={selectedResourceId}
+                        placeholder="Select usage resource"
+                        options={resourceOptions}
+                        onchange={handleResourceChange}
+                        disabled>
+                    </lightning-combobox>
+
+                    <lightning-input
+                        type="number"
+                        label="Overage Quantity (Delta)"
+                        value={overageQty}
+                        min="1"
+                        step="1"
+                        readonly
+                        class="slds-m-top_medium">
+                    </lightning-input>
+
+                    <div class="slds-grid slds-gutters slds-m-top_medium">
+                        <div class="slds-col">
+                            <lightning-input
+                                type="date"
+                                label="Billing Period Start"
+                                value={billingPeriodStart}
+                                readonly>
+                            </lightning-input>
+                        </div>
+                        <div class="slds-col">
+                            <lightning-input
+                                type="date"
+                                label="Billing Period End"
+                                value={billingPeriodEnd}
+                                readonly>
+                            </lightning-input>
+                        </div>
+                    </div>
+
+                    <template if:true={amendmentStartDate}>
+                        <div class="slds-box amendment-date-box slds-m-top_medium">
+                            <p class="slds-text-body_small">
+                                <strong>Amendment Line Start Date:</strong>&nbsp;{amendmentStartDate}
+                            </p>
+                            <p class="slds-text-body_small slds-m-top_xx-small slds-text-color_weak">
+                                First day of the month following the billing period end.
+                            </p>
+                        </div>
+                    </template>
+
+                    <template if:true={errorMessage}>
+                        <div class="slds-box slds-theme_error slds-m-top_medium">
+                            <p class="slds-text-body_small">{errorMessage}</p>
+                        </div>
+                    </template>
+                </template>
+
+            </div>
+
+            <footer class="slds-modal__footer">
+                <lightning-button label="Cancel" onclick={handleClose} class="slds-m-right_small">
+                </lightning-button>
+                <template if:true={isStep2}>
+                    <lightning-button label="Back" onclick={handleBack} class="slds-m-right_small">
+                    </lightning-button>
+                </template>
+                <template if:true={isStep1}>
+                    <lightning-button label="Next" variant="brand" onclick={handleNext} disabled={isNextDisabled}>
+                    </lightning-button>
+                </template>
+                <template if:true={isStep2}>
+                    <lightning-button label={submitLabel} variant="brand" onclick={handleSubmit} disabled={isSubmitDisabled}>
+                    </lightning-button>
+                </template>
+            </footer>
+
+        </div>
+    </section>
+    <div class="slds-backdrop slds-backdrop_open"></div>
+
+    <!-- Hidden VF iframe for session token -->
+    <iframe src="/apex/BullhornSessionProvider" onload={handleIframeLoad}
+        style="display:none;" title="Session Provider"></iframe>
+</template>

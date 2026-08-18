@@ -343,19 +343,6 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
             }
             const freqQuoteId = fc.quoteId;
 
-            // Step 3c: DML — stamp ContractId on freq-change quote (no pricing recalc)
-            if (freqQuoteId) {
-                const sqResult = JSON.parse(await stampFreqChangeQuoteContract({
-                    freqQuoteId,
-                    renewalContractId: this._renewalContractId
-                }));
-                if (!sqResult.ok) {
-                    this.errorMessage = 'Failed to link quote to renewal contract: ' + sqResult.message;
-                    this.isSubmitting = false;
-                    return;
-                }
-            }
-
             // Step 3b-ii: Callout — add QSIs to the freq-change quote (separate tx from DML)
             if (freqQuoteId) {
                 this.submittingStatus = 'Adding billing frequency lines...';
@@ -429,15 +416,18 @@ export default class BillingFrequencyModal extends NavigationMixin(LightningElem
                 this.submittingStatus = 'Activating billing frequency order...';
                 const fo = JSON.parse(await createOrderFromQuote({ quoteId: freqQuoteId }));
                 if (!fo.ok) { this.errorMessage = 'Freq change order creation failed: ' + fo.message; this.isSubmitting = false; return; }
-                // Freq-change order: set EffectiveDate = renewal contract start date
-                // so assets get correct lifecycle dates and auto-link to renewal contract via ACR
+                // Stamp ContractId on the quote after order creation (not before) to avoid
+                // createOrdersFromQuote enforcing Contract.StartDate <= Order.EffectiveDate at creation time.
+                await stampFreqChangeQuoteContract({ freqQuoteId, renewalContractId: this._renewalContractId });
                 const fa = JSON.parse(await activateOrder({ orderId: fo.orderId, renewalContractId: this._renewalContractId, effectiveDate: contractStartDate }));
                 if (!fa.ok) { this.errorMessage = 'Freq change order activation failed: ' + (fa.message || fa.body); this.isSubmitting = false; return; }
                 orderNumbers.push(fa.orderNumber);
             }
 
-            // Step 6: Post-activation — create dual ACR for unchanged assets → renewal contract
+            // Step 6: Post-activation — ACR for original assets + new successor assets.
+            // Assetization runs async after activation; wait briefly so new Asset records exist.
             this.submittingStatus = 'Finalizing contract associations...';
+            await new Promise(r => setTimeout(r, 5000));
             await stampPostActivation({
                 renewalContractId: this._renewalContractId,
                 requestJson: this._requestJson
